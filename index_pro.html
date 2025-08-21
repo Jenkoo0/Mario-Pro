@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Mini-Platformer PRO</title>
+<style>
+  :root { --bg:#0b0e14; --fg:#e7edf6; --muted:#b9c7d9; --br:#1f2733; --panel:#121824; --pill:#0f1420; }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:#10131a;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  body{display:flex;flex-direction:column;min-height:100vh;overscroll-behavior:none;touch-action:none;}
+  header{display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--bg);position:sticky;top:0;z-index:5;border-bottom:1px solid var(--br);}
+  h1{margin:0 8px 0 0;font-size:16px;letter-spacing:.3px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  select,button,input[type=checkbox]{padding:6px 8px;border-radius:10px;border:1px solid var(--br);background:#141a22;color:var(--fg);font-size:14px}
+  .pill{display:inline-block;padding:2px 8px;border:1px solid var(--br);border-radius:999px;background:var(--pill);font-size:12px}
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px}
+  .canvasWrap{width:100%;max-width:1040px;aspect-ratio:16/9;border-radius:14px;border:1px solid var(--br);overflow:hidden;background:#cbe2ff}
+  canvas{width:100%;height:100%;display:block;image-rendering:pixelated;background:linear-gradient(#86b8ff 0%, #cbe2ff 60%, #e7f1ff 100%)}
+  .hint{font-size:13px;color:var(--muted);text-align:center}
+  footer{text-align:center;font-size:12px;color:#94a3b8;padding:10px}
+  .hudTouch{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;padding:10px 12px;gap:10px;pointer-events:none}
+  .cluster{display:flex;gap:10px;pointer-events:auto}
+  .btn{width:74px;height:74px;border-radius:16px;background:rgba(20,26,34,.85);border:1px solid var(--br);display:flex;align-items:center;justify-content:center;color:var(--fg);font-weight:700;font-size:18px;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none}
+  .btn:active{filter:brightness(1.15)}
+  .btn.small{width:60px;height:60px}
+  @media (max-width:480px){.btn{width:64px;height:64px;font-size:16px}.btn.small{width:54px;height:54px}}
+  /* Pause/settings modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:9}
+  .modal.active{display:flex}
+  .card{background:var(--panel);border:1px solid var(--br);border-radius:16px;padding:16px;min-width:280px;max-width:92vw}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .card h2{margin:0 0 8px 0;font-size:18px}
+  .card button{margin-top:8px}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:100px;background:rgba(0,0,0,.65);padding:10px 14px;border-radius:12px;border:1px solid #2a3442;font-size:14px;opacity:1;transition:opacity .6s ease}
+  .toast.hide{opacity:0}
+</style>
+</head>
+<body>
+  <header>
+    <h1>🏁 Mini-Platformer PRO</h1>
+    <div class="controls">
+      <label>Farbe:
+        <select id="colorSel">
+          <option value="#ff4d4d">Rot</option><option value="#4d88ff">Blau</option><option value="#4dff88">Grün</option>
+          <option value="#ffb84d">Orange</option><option value="#c94dff">Lila</option><option value="#ffd24d">Gelb</option><option value="#1f2937">Dunkel</option>
+        </select>
+      </label>
+      <label>Hat:
+        <select id="hatSel">
+          <option value="none">Keiner</option><option value="cap">Cap</option><option value="mario">Mütze (M)</option><option value="crown">Krone</option>
+        </select>
+      </label>
+      <label>Schwierigkeit:
+        <select id="diffSel"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+      </label>
+      <label class="pill"><input id="muteSfx" type="checkbox" /> SFX aus</label>
+      <button id="btnReset">Neu starten</button>
+      <button id="btnFull">Vollbild</button>
+      <button id="btnPause">Pause</button>
+      <span class="pill">Touch: ◀ ▶ ⤴  |  P=Pause</span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="canvasWrap"><canvas id="game" width="1024" height="576"></canvas></div>
+    <div class="hint">Ziele: Münzen sammeln, Gegner stompen, Checkpoints aktivieren, Ziel-Flagge erreichen. Power‑Ups: ⭐ Unbesiegbar, 💓 +Leben, 🥾 Doppelsprung.</div>
+  </div>
+
+  <div class="hudTouch">
+    <div class="cluster">
+      <div class="btn" id="btnLeft" aria-label="Links">◀</div>
+      <div class="btn" id="btnRight" aria-label="Rechts">▶</div>
+    </div>
+    <div class="cluster">
+      <div class="btn small" id="btnJump" aria-label="Springen">⤴</div>
+      <div class="btn small" id="btnPause2" aria-label="Pause">⏸</div>
+      <div class="btn small" id="btnRestart" aria-label="Restart">↻</div>
+    </div>
+  </div>
+
+  <div id="modal" class="modal">
+    <div class="card">
+      <h2>⏸ Pause</h2>
+      <div class="row"><label class="pill"><input id="muteSfx2" type="checkbox" /> SFX aus</label></div>
+      <div class="row">
+        <button id="btnResume">Weiter</button>
+        <button id="btnRestart2">Neu starten</button>
+        <button id="btnQuit">Level verlassen</button>
+      </div>
+      <div class="row" style="font-size:12px;color:var(--muted)">
+        Fortschritt wird lokal gespeichert (Münzen/Level).
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Tipp: Doppeltippen ⤴ = Doppelsprung (mit 🥾).</div>
+
+  <footer>PRO-Edition: Multi-Level, Checkpoints, Power-Ups, Leben, Timer, Score, Pause, Mobile Controls, Local Save.</footer>
+
+<script>
+(() => {
+  /* === Shortcuts === */
+  const $ = (id)=>document.getElementById(id);
+  const canvas = $('game'), ctx = canvas.getContext('2d', {alpha:false});
+  const colorSel=$('colorSel'), hatSel=$('hatSel'), diffSel=$('diffSel'), muteSfx=$('muteSfx');
+  const btnReset=$('btnReset'), btnFull=$('btnFull'), btnPause=$('btnPause');
+  const btnLeft=$('btnLeft'), btnRight=$('btnRight'), btnJump=$('btnJump'), btnRestart=$('btnRestart'), btnPause2=$('btnPause2');
+  const modal=$('modal'), btnResume=$('btnResume'), btnRestart2=$('btnRestart2'), btnQuit=$('btnQuit'), muteSfx2=$('muteSfx2');
+  const toast=$('toast'); setTimeout(()=>toast.classList.add('hide'),3500);
+  const WIDTH=canvas.width, HEIGHT=canvas.height, TILE=48;
+
+  // prevent browser gestures while touching game
+  ['touchstart','touchmove','touchend'].forEach(evt => {
+    document.addEventListener(evt, e => { if (e.target.closest('.btn') || e.target===canvas) e.preventDefault(); }, {passive:false});
+  });
+
+  btnFull.addEventListener('click', () => {
+    const wrap = document.querySelector('.canvasWrap');
+    if (!document.fullscreenElement) (wrap.requestFullscreen && wrap.requestFullscreen()) || (canvas.requestFullscreen && canvas.requestFullscreen());
+    else document.exitFullscreen && document.exitFullscreen();
+  });
+
+  /* === SFX via WebAudio (no external files) === */
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const audioCtx = new AudioCtx();
+  let sfxMuted = false;
+  function beep({freq=440, dur=0.08, type='square', vol=0.2}){
+    if (sfxMuted) return;
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol, t+0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  }
+  muteSfx.addEventListener('change', ()=>{ sfxMuted=muteSfx.checked; muteSfx2.checked=sfxMuted; });
+  muteSfx2.addEventListener('change', ()=>{ sfxMuted=muteSfx2.checked; muteSfx.checked=sfxMuted; });
+
+  /* === Progress Save === */
+  const SAVE_KEY = 'mp_pro_progress_v1';
+  const save = (obj)=>localStorage.setItem(SAVE_KEY, JSON.stringify(obj));
+  const load = ()=>{ try { return JSON.parse(localStorage.getItem(SAVE_KEY)||'{}'); } catch(e){ return {}; } };
+  const progress = Object.assign({levelUnlocked:0, coinsBest:[], timesBest:[]}, load());
+
+  /* === Game State === */
+  const G=0.55, MOVE=0.7, MAX_XS=5.2, FRICTION=0.82, JUMP_V=12.2, COYOTE=6;
+  const STATE = {t:0, cameraX:0, paused:false, won:false, dead:false, msgTimer:0, coyote:0, levelIdx:0, levelTime:300, score:0};
+  const PLAYER = {x:80,y:HEIGHT-160,w:28,h:40,xs:0,ys:0,onGround:false,c:colorSel.value,hat:hatSel.value,lives:3,coins:0,spawnX:80,spawnY:HEIGHT-160,canDouble:false,inv:0};
+  let LEVEL = null; // filled by loadLevel
+  colorSel.addEventListener('change', ()=>PLAYER.c=colorSel.value);
+  hatSel.addEventListener('change', ()=>PLAYER.hat=hatSel.value);
+  diffSel.addEventListener('change', ()=>setDifficulty(diffSel.value));
+
+  function setDifficulty(d){
+    if (d==='easy'){ PLAYER.lives=5; STATE.levelTime=360; }
+    else if (d==='hard'){ PLAYER.lives=Math.max(1,PLAYER.lives); STATE.levelTime=240; }
+    else { PLAYER.lives=3; STATE.levelTime=300; }
+  }
+  setDifficulty(diffSel.value);
+
+  /* === Levels (tilemaps) ===
+     Legend:
+      # solid ground   = platform   ^ spikes   o coin   C checkpoint   G goal
+      E enemy-walker   J enemy-jumper   S start   H heart(+life)   * star(inv)   B boot(double jump)
+  */
+  const LEVELS = [
+`................................................................
+................................................................
+.................................................o..............
+.......................==......................====.............
+...............o.........................................o......
+.............====..............o.................E..............
+..............................................==......J.........
+..S.............................................................
+###################....###########......#####..###########..##G#
+###################....###########..o...#####..###########..####`,
+`................................................................
+................................................................
+.............o...............o.................................G
+.........==.........o.....======......o..............o..........
+..................====....................o.....====............
+....E.....................................................o.....
+...........o.......J.................o......E...................
+..S.................................................C...........
+######################....##########....##############.....#####
+######################....##########....##############.....#####`
+  ];
+  // per-level extras
+  const EXTRAS = [
+    { walkers:[{x:900, min:860, max:1000,speed:1.2}], jumpers:[{x:1380, y:HEIGHT-64-16, floorY:HEIGHT-64-16}], powerups:[{t:'B',x:600,y:HEIGHT-160},{t:'H',x:1100,y:HEIGHT-200}] },
+    { walkers:[{x:600, min:560, max:780,speed:1.3},{x:1500,min:1460,max:1600,speed:1.1}], jumpers:[{x:900,y:HEIGHT-64-16}], powerups:[{t:'*',x:980,y:HEIGHT-220},{t:'H',x:400,y:HEIGHT-160},{t:'B',x:1300,y:HEIGHT-240}] }
+  ];
+
+  function parseLevel(idx){
+    const raw = LEVELS[idx].split('\n').filter(Boolean);
+    const h = raw.length, w = raw[0].length;
+    const tiles = raw;
+    let start={x:80,y:HEIGHT-160}, goal={x:(w-2)*TILE, y:HEIGHT-64, w:24, h:200};
+    const coins=[], checkpoints=[], spikes=[], plats=[], solids=[], enemies=[], powerups=[];
+    for (let j=0;j<h;j++){
+      for (let i=0;i<w;i++){
+        const ch = tiles[j][i], x=i*TILE, y = HEIGHT - (h-j)*TILE; // fit bottom
+        if (ch==='#' || ch==='=') solids.push({x,y,w:TILE,h: (ch==='#')?64:20, top:(ch==='=')});
+        if (ch==='^') spikes.push({x:x, y:y+64, w:TILE, h:32});
+        if (ch==='o') coins.push({x:x+TILE/2,y:y+TILE/2+8, r:8, got:false});
+        if (ch==='S') start={x:x+16,y:y+8};
+        if (ch==='C') checkpoints.push({x:x+10,y:y, w:20,h:200, act:false});
+        if (ch==='G') goal={x:x+8,y:y+64, w:20,h:200};
+        if (ch==='E') enemies.push({type:'walker',x:x,y:y-16,w:28,h:28,dir:1,minX:x-40,maxX:x+100,speed:1.2,alive:true});
+        if (ch==='J') enemies.push({type:'jumper',x:x,y:y-16,w:28,h:28,dir:1,floorY:y-16,t:0,alive:true});
+      }
+    }
+    // add extras
+    for (const wlk of (EXTRAS[idx]?.walkers||[])) enemies.push({type:'walker',x:wlk.x,y:HEIGHT-64-16,w:28,h:28,dir:1,minX:wlk.min,maxX:wlk.max,speed:wlk.speed||1.2,alive:true});
+    for (const jmp of (EXTRAS[idx]?.jumpers||[])) enemies.push({type:'jumper',x:jmp.x,y:jmp.y||HEIGHT-64-16,w:28,h:28,dir:1,floorY:jmp.floorY||HEIGHT-64-16,t:0,alive:true});
+    for (const pu of (EXTRAS[idx]?.powerups||[])) powerups.push({t:pu.t, x:pu.x, y:pu.y, r:10, got:false});
+    return {w,h,tiles,solids,spikes,coins,checkpoints,enemies,platforms:plats,goal,start,powerups};
+  }
+
+  /* === Input === */
+  const keys = new Set();
+  document.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    keys.add(k);
+    if (k===' '||k==='arrowup'||k==='w') tryJump();
+    if (k==='p' || k==='escape') togglePause(true);
+  });
+  document.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+  const touch = {left:false,right:false,jump:false};
+  function bindTouch(el, key, onTap){
+    const down=()=>{ touch[key]=true; if(onTap) onTap(); };
+    const up=()=>{ touch[key]=false; };
+    ['touchstart','pointerdown','mousedown'].forEach(ev=>el.addEventListener(ev, down));
+    ['touchend','touchcancel','pointerup','mouseup','mouseleave'].forEach(ev=>el.addEventListener(ev, up));
+  }
+  bindTouch(btnLeft,'left'); bindTouch(btnRight,'right'); bindTouch(btnJump,'jump',()=>tryJump());
+  bindTouch(btnRestart,'restart',()=>resetLevel()); bindTouch(btnPause2,'pause',()=>togglePause(true));
+
+  /* === Pause / Modal === */
+  function togglePause(show){
+    STATE.paused = show ? true : !STATE.paused;
+    modal.classList.toggle('active', STATE.paused);
+  }
+  btnPause.addEventListener('click', ()=>togglePause(true));
+  btnResume.addEventListener('click', ()=>togglePause(false));
+  btnRestart2.addEventListener('click', ()=>{ togglePause(false); resetLevel(); });
+  btnQuit.addEventListener('click', ()=>{ togglePause(false); loadLevel(0,true); });
+
+  btnReset.addEventListener('click', resetLevel);
+
+  function tryJump(){
+    if ((PLAYER.onGround || STATE.coyote>0 || (PLAYER.canDouble && PLAYER.doubleReady)) && !STATE.dead && !STATE.won) {
+      if (!PLAYER.onGround && STATE.coyote===0 && PLAYER.canDouble && PLAYER.doubleReady){
+        // double jump
+        PLAYER.doubleReady=false; beep({freq:700,dur:0.07,type:'sawtooth'});
+      } else {
+        beep({freq:420,dur:0.06,type:'square'});
+      }
+      PLAYER.ys = -JUMP_V; PLAYER.onGround=false; STATE.coyote=0;
+    }
+  }
+
+  /* === Collision helpers === */
+  function rectsOverlap(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+  function collideSolids(obj, solids){
+    // X axis
+    obj.x += obj.xs;
+    for (const s of solids){
+      if (rectsOverlap(obj, s)){
+        if (obj.xs>0) obj.x = s.x - obj.w;
+        else if (obj.xs<0) obj.x = s.x + s.w;
+        obj.xs = 0;
+      }
+    }
+    // Y axis
+    obj.y += obj.ys;
+    obj.onGround = false;
+    for (const s of solids){
+      if (rectsOverlap(obj, s)){
+        if (obj.ys>0){ obj.y = s.y - obj.h; obj.ys=0; obj.onGround=true; }
+        else if (obj.ys<0){ obj.y = s.y + s.h; obj.ys=0; }
+      }
+    }
+  }
+
+  /* === Level control === */
+  function loadLevel(idx, keepProgress=false){
+    STATE.levelIdx = idx;
+    LEVEL = parseLevel(idx);
+    PLAYER.x = LEVEL.start.x; PLAYER.y = LEVEL.start.y; PLAYER.xs=0; PLAYER.ys=0;
+    PLAYER.spawnX = PLAYER.x; PLAYER.spawnY = PLAYER.y;
+    PLAYER.coins = 0; PLAYER.canDouble=false; PLAYER.doubleReady=true; PLAYER.inv=0;
+    STATE.cameraX = 0; STATE.won=false; STATE.dead=false; STATE.msgTimer=0; STATE.t=0;
+    setDifficulty(diffSel.value);
+    if (!keepProgress) { /* keep lives from diff */ }
+  }
+
+  function resetLevel(){
+    loadLevel(STATE.levelIdx, true);
+  }
+
+  function nextLevel(){
+    const next = Math.min(LEVELS.length-1, STATE.levelIdx+1);
+    progress.levelUnlocked = Math.max(progress.levelUnlocked||0, next);
+    save(progress);
+    loadLevel(next);
+  }
+
+  /* === Enemy AI === */
+  function updateEnemies(){
+    for (const e of LEVEL.enemies){
+      if (!e.alive) continue;
+      if (e.type==='walker'){
+        e.x += e.speed*e.dir;
+        if (e.x < e.minX){ e.x = e.minX; e.dir=1; }
+        if (e.x + e.w > e.maxX){ e.x = e.maxX - e.w; e.dir=-1; }
+      } else if (e.type==='jumper'){
+        e.t += 1;
+        e.y = e.floorY + Math.sin(e.t*0.08)*16;
+      }
+      // collision with player
+      const er = {x:e.x, y:e.y, w:e.w, h:e.h};
+      if (rectsOverlap(PLAYER, er)){
+        if (PLAYER.inv>0){ e.alive=false; beep({freq:200,dur:0.05,type:'sawtooth'}); continue; }
+        if (PLAYER.ys>0 && PLAYER.y + PLAYER.h - er.y < 16){
+          // stomp
+          e.alive=false; PLAYER.ys = -JUMP_V*0.7; STATE.score += 100; beep({freq:300,dur:0.07,type:'square'});
+        } else {
+          hurtPlayer();
+        }
+      }
+    }
+  }
+
+  function hurtPlayer(){
+    if (PLAYER.inv>0) return;
+    PLAYER.inv = 120; // 2 seconds @60fps
+    PLAYER.xs = -Math.sign(PLAYER.xs||1)*2; PLAYER.ys=-6;
+    PLAYER.lives -= 1; STATE.msgTimer=60;
+    beep({freq:120,dur:0.1,type:'square'});
+    if (PLAYER.lives < 0){
+      // full restart
+      PLAYER.lives=3; loadLevel(0);
+    }
+  }
+
+  /* === Powerups & Coins === */
+  function updateCollectibles(){
+    for (const c of LEVEL.coins){
+      if (!c.got){
+        const dx = (PLAYER.x + PLAYER.w/2) - c.x;
+        const dy = (PLAYER.y + PLAYER.h/2) - c.y;
+        if (dx*dx + dy*dy < (c.r + Math.min(PLAYER.w,PLAYER.h)/2)**2){
+          c.got=true; PLAYER.coins++; STATE.score+=10; beep({freq:880,dur:0.05,type:'triangle'});
+        }
+      }
+    }
+    for (const p of LEVEL.powerups){
+      if (!p.got){
+        const dx=(PLAYER.x + PLAYER.w/2)-p.x, dy=(PLAYER.y + PLAYER.h/2)-p.y;
+        if (dx*dx + dy*dy < (p.r + Math.min(PLAYER.w,PLAYER.h)/2)**2){
+          p.got=true;
+          if (p.t==='H'){ PLAYER.lives=Math.min(9,PLAYER.lives+1); beep({freq:500,dur:0.12,type:'sine'}); }
+          if (p.t==='*'){ PLAYER.inv=60*8; beep({freq:1200,dur:0.2,type:'sawtooth'}); }
+          if (p.t==='B'){ PLAYER.canDouble=true; PLAYER.doubleReady=true; beep({freq:640,dur:0.1,type:'square'}); }
+        }
+      }
+    }
+  }
+
+  /* === Checkpoints & Goal === */
+  function checkCheckpointsAndGoal(){
+    for (const C of LEVEL.checkpoints){
+      if (!C.act && rectsOverlap(PLAYER, C)){
+        C.act=true; PLAYER.spawnX = C.x; PLAYER.spawnY = C.y-PLAYER.h; STATE.msgTimer=90; beep({freq:600,dur:0.1,type:'triangle'});
+      }
+    }
+    if (PLAYER.x + PLAYER.w > LEVEL.goal.x && PLAYER.y + PLAYER.h > LEVEL.goal.y - LEVEL.goal.h + 10){
+      // win
+      STATE.won = true;
+      STATE.score += 500 + PLAYER.coins*2 + Math.max(0, Math.floor(STATE.levelTime))*3;
+      progress.coinsBest[STATE.levelIdx] = Math.max(progress.coinsBest[STATE.levelIdx]||0, PLAYER.coins);
+      const timeUsed = 300 - STATE.levelTime;
+      progress.timesBest[STATE.levelIdx] = Math.min(progress.timesBest[STATE.levelIdx]||9999, timeUsed);
+      save(progress);
+      beep({freq:880,dur:0.12,type:'sine'});
+      setTimeout(()=>nextLevel(), 1200);
+    }
+  }
+
+  /* === Spikes & Pits === */
+  function checkHazards(){
+    for (const s of LEVEL.spikes){
+      const box = {x:s.x+2, y:s.y - s.h + 14, w:s.w-4, h:s.h - 14};
+      if (rectsOverlap(PLAYER, box)){
+        killPlayer();
+      }
+    }
+    if (PLAYER.y > HEIGHT + 200) killPlayer();
+  }
+  function killPlayer(){
+    if (STATE.dead || STATE.won) return;
+    STATE.dead = true; STATE.msgTimer=60; beep({freq:100,dur:0.15,type:'square'});
+    setTimeout(()=>{
+      STATE.dead=false;
+      PLAYER.x=PLAYER.spawnX; PLAYER.y=PLAYER.spawnY; PLAYER.xs=0; PLAYER.ys=0;
+      PLAYER.inv=60; // spawn grace
+      PLAYER.doubleReady=true;
+    }, 900);
+  }
+
+  /* === Drawing === */
+  function draw(){
+    const cx = STATE.cameraX;
+    ctx.clearRect(0,0,WIDTH,HEIGHT);
+    drawClouds(cx*0.35); drawMountains(cx*0.55); drawHills(cx*0.75);
+    drawGround(cx);
+    drawSolids(cx);
+    drawSpikes(cx);
+    drawCoins(cx);
+    drawPowerups(cx);
+    drawEnemies(cx);
+    drawGoal(cx);
+    drawPlayer(cx);
+    drawHUD();
+    if (STATE.paused) drawPauseBanner();
+  }
+  function drawClouds(offset){
+    ctx.save(); ctx.globalAlpha=0.75; ctx.fillStyle='#ffffff';
+    const arr=[{x:100,y:80,w:120,h:40},{x:420,y:120,w:160,h:50},{x:800,y:70,w:140,h:45},{x:1200,y:110,w:150,h:48},{x:1600,y:90,w:180,h:56},{x:2000,y:130,w:140,h:40},{x:2400,y:100,w:160,h:45}];
+    for (const c of arr){ const x=c.x-(offset%2400); bubble(x,c.y,c.w,c.h); bubble(x+30,c.y-10,c.w*.6,c.h*.8); bubble(x-40,c.y-6,c.w*.7,c.h*.9); } ctx.restore();
+  }
+  function drawMountains(offset){
+    ctx.save(); ctx.fillStyle='#8bb1e6'; const baseY=HEIGHT-180;
+    const peaks=[{x:200,w:240},{x:700,w:260},{x:1200,w:280},{x:1700,w:240},{x:2300,w:300}];
+    for (const p of peaks){ const x=p.x-(offset%2400); ctx.beginPath(); ctx.moveTo(x,baseY); ctx.lineTo(x+p.w/2,baseY-130); ctx.lineTo(x+p.w,baseY); ctx.closePath(); ctx.fill(); } ctx.restore();
+  }
+  function drawHills(offset){
+    ctx.save(); ctx.fillStyle='#a6c77a'; const baseY=HEIGHT-90;
+    const hills=[{x:150,w:300},{x:900,w:360},{x:1650,w:320},{x:2200,w:340}];
+    for (const h of hills){ const x=h.x-(offset%2400); ctx.beginPath(); ctx.ellipse(x,baseY, h.w/2, 60, 0, 0, Math.PI*2); ctx.fill(); }
+    ctx.restore();
+  }
+  function drawGround(cx){ const groundY=HEIGHT-64; ctx.fillStyle='#5f7f43'; ctx.fillRect(-cx,groundY,4000,64); ctx.fillStyle='#6b3f2a'; ctx.fillRect(-cx,groundY+40,4000,200); ctx.fillStyle='#7fbf4f'; for (let x=-cx; x < -cx+4000; x+=16){ const h=6+4*Math.sin((x+STATE.t*0.2)*0.02); ctx.fillRect(x,HEIGHT-66,8,h);} }
+  function drawSolids(cx){ for (const s of LEVEL.solids){ const x=s.x-cx; ctx.fillStyle='#7a5a3a'; ctx.fillRect(x,s.y,s.w,s.h); ctx.fillStyle='#9b6b3e'; ctx.fillRect(x,s.y,s.w,8);} }
+  function drawSpikes(cx){ for (const s of LEVEL.spikes){ const x=s.x-cx, baseY=s.y; const count=Math.floor(s.w/16); ctx.fillStyle='#d8e2ec'; for (let i=0;i<count;i++){ ctx.beginPath(); ctx.moveTo(x+i*16,baseY); ctx.lineTo(x+i*16+8,baseY-s.h); ctx.lineTo(x+i*16+16,baseY); ctx.closePath(); ctx.fill(); } } }
+  function drawCoins(cx){ for (const c of LEVEL.coins){ if (c.got) continue; const x=c.x-cx, y=c.y+Math.sin(STATE.t*0.15+c.x*0.01)*4; ctx.beginPath(); ctx.arc(x,y,c.r,0,Math.PI*2); ctx.fillStyle='#ffd54a'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#c49a00'; ctx.stroke(); } }
+  function drawPowerups(cx){ for (const p of LEVEL.powerups){ if (p.got) continue; const x=p.x-cx, y=p.y+Math.sin(STATE.t*0.1+p.x*0.02)*3; if (p.t==='H'){ drawHeart(x,y,10); } if (p.t==='*'){ drawStar(x,y,12); } if (p.t==='B'){ drawBoot(x,y,12); } } }
+  function drawEnemies(cx){ for (const e of LEVEL.enemies){ if (!e.alive) continue; const x=e.x-cx; ctx.fillStyle='#2b3340'; ctx.fillRect(x,e.y,e.w,e.h); ctx.fillStyle='#fff'; ctx.fillRect(x+6,e.y+8,6,6); ctx.fillRect(x+e.w-12,e.y+8,6,6); ctx.fillStyle='#222'; ctx.fillRect(x+8,e.y+10,2,2); ctx.fillRect(x+e.w-10,e.y+10,2,2); } }
+  function drawGoal(cx){ const g=LEVEL.goal, x=g.x-cx; ctx.fillStyle='#bfc6d0'; ctx.fillRect(x,g.y-g.h,g.w,g.h); const fy=g.y-g.h+40+Math.sin(STATE.t*0.1)*4; ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.moveTo(x+g.w,fy); ctx.lineTo(x+g.w+64,fy+18); ctx.lineTo(x+g.w,fy+36); ctx.closePath(); ctx.fill(); const colors=['#e40303','#ff8c00','#ffed00','#008026','#004dff','#750787']; for (let i=0;i<colors.length;i++){ ctx.fillStyle=colors[i]; ctx.fillRect(x+g.w+6, fy+2+i*5, 52, 4);} }
+  function drawPlayer(cx){
+    const x=Math.round(PLAYER.x-cx), y=Math.round(PLAYER.y);
+    // flicker when invincible
+    if (PLAYER.inv>0 && (STATE.t%6<3)) return;
+    ctx.globalAlpha=0.2; ctx.beginPath(); ctx.ellipse(x+PLAYER.w/2, y+PLAYER.h, PLAYER.w*0.6, 6, 0, 0, Math.PI*2); ctx.fillStyle='#000'; ctx.fill(); ctx.globalAlpha=1;
+    roundRect(ctx,x,y,PLAYER.w,PLAYER.h,6,PLAYER.c);
+    // eyes
+    ctx.fillStyle='#fff'; ctx.fillRect(x+6,y+10,4,6); ctx.fillRect(x+PLAYER.w-10,y+10,4,6);
+    ctx.fillStyle='#111'; ctx.fillRect(x+7,y+12,2,2); ctx.fillRect(x+PLAYER.w-9,y+12,2,2);
+    drawHat(PLAYER.hat,x,y);
+  }
+  function drawHUD(){
+    ctx.fillStyle='#0b0e14'; ctx.globalAlpha=.6; ctx.fillRect(10,10,220,54); ctx.globalAlpha=1;
+    ctx.fillStyle='#ffd54a'; ctx.font='16px sans-serif'; ctx.fillText('Münzen: '+PLAYER.coins, 18, 32);
+    ctx.fillStyle='#e7edf6'; ctx.fillText('Score: '+STATE.score, 18, 52);
+    // Lives
+    for (let i=0;i<Math.max(PLAYER.lives,0);i++) drawHeart(180 + i*18, 24, 7);
+    // Timer
+    ctx.fillStyle='#b9c7d9'; ctx.textAlign='right'; ctx.fillText('Zeit: '+Math.max(0,Math.floor(STATE.levelTime)), WIDTH-16, 28); ctx.textAlign='left';
+    // Level
+    ctx.fillText('Level '+(STATE.levelIdx+1)+'/'+LEVELS.length, WIDTH-140, 50);
+    if (STATE.won) banner('Level geschafft! 🎉', 'Weiter geht’s ...');
+    else if (STATE.dead) banner('Autsch! ☠️', 'Respawn...');
+    else if (STATE.msgTimer>0){ STATE.msgTimer--; ctx.fillStyle='#fff'; ctx.font='bold 20px sans-serif'; ctx.fillText('+', WIDTH/2, 60); }
+  }
+  function drawPauseBanner(){ banner('Pause ⏸', 'Tippe "Weiter" oder P'); }
+
+  function banner(title, subtitle){
+    ctx.save(); ctx.globalAlpha=.85; ctx.fillStyle='#0b0e14'; ctx.fillRect(WIDTH/2-220, HEIGHT/2-64, 440, 128);
+    ctx.globalAlpha=1; ctx.strokeStyle='#2a3442'; ctx.strokeRect(WIDTH/2-220, HEIGHT/2-64, 440, 128);
+    ctx.fillStyle='#e7edf6'; ctx.font='bold 24px sans-serif'; ctx.textAlign='center'; ctx.fillText(title, WIDTH/2, HEIGHT/2-16);
+    ctx.font='14px sans-serif'; ctx.fillStyle='#b9c7d9'; ctx.fillText(subtitle, WIDTH/2, HEIGHT/2+12); ctx.textAlign='left'; ctx.restore();
+  }
+
+  function drawHeart(x,y,r){ ctx.save(); ctx.fillStyle='#ff6b6b'; ctx.beginPath(); ctx.moveTo(x,y); ctx.bezierCurveTo(x-r,y-r, x-2*r,y+r*0.4, x,y+r); ctx.bezierCurveTo(x+2*r,y+r*0.4, x+r,y-r, x,y); ctx.fill(); ctx.restore(); }
+  function drawStar(x,y,r){ ctx.save(); ctx.fillStyle='#ffd54a'; ctx.beginPath(); for (let i=0;i<10;i++){ const ang=i*Math.PI/5; const rad=(i%2?r:r/2); ctx.lineTo(x+Math.cos(ang)*rad, y+Math.sin(ang)*rad); } ctx.closePath(); ctx.fill(); ctx.strokeStyle='#c49a00'; ctx.stroke(); ctx.restore(); }
+  function drawBoot(x,y,r){ ctx.save(); ctx.fillStyle='#333'; ctx.fillRect(x-r, y, r*2, r/1.3); ctx.fillStyle='#999'; ctx.fillRect(x-r, y+r/1.3, r*2, r/2.5); ctx.restore(); }
+  function bubble(x,y,w,h){ ctx.beginPath(); ctx.ellipse(x,y,w/2,h/2,0,0,Math.PI*2); ctx.fill(); }
+  function roundRect(ctx,x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fillStyle=fill; ctx.fill(); }
+  function drawHat(kind,x,y){ if(kind==='none')return; if(kind==='cap'){ ctx.fillStyle='#222'; ctx.fillRect(x-2,y-6,32,10); ctx.fillRect(x+24,y-2,10,4); } else if (kind==='mario'){ ctx.fillStyle='#cc0000'; ctx.beginPath(); ctx.ellipse(x+14,y-2,18,10,0,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x+14,y-2,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#cc0000'; ctx.font='bold 10px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('M', x+14, y-2); ctx.textAlign='left'; } else if (kind==='crown'){ ctx.fillStyle='#ffd54a'; ctx.beginPath(); ctx.moveTo(x+4,y-4); ctx.lineTo(x+10,y-12); ctx.lineTo(x+16,y-4); ctx.lineTo(x+22,y-12); ctx.lineTo(x+28,y-4); ctx.lineTo(x+4,y-4); ctx.fill(); ctx.strokeStyle='#c49a00'; ctx.lineWidth=1; ctx.stroke(); } }
+
+  /* === Main Loop === */
+  function step(){
+    if (!STATE.paused){
+      STATE.t++;
+      // Input
+      const left = keys.has('arrowleft') || keys.has('a') || touch.left;
+      const right= keys.has('arrowright') || keys.has('d') || touch.right;
+      if (!STATE.dead && !STATE.won){
+        if (left)  PLAYER.xs -= MOVE;
+        if (right) PLAYER.xs += MOVE;
+      }
+      PLAYER.xs = Math.max(-MAX_XS, Math.min(MAX_XS, PLAYER.xs));
+      PLAYER.ys += G;
+
+      // physics
+      collideSolids(PLAYER, LEVEL.solids);
+      if (PLAYER.onGround){ PLAYER.xs *= FRICTION; PLAYER.doubleReady = PLAYER.canDouble; }
+      STATE.coyote = PLAYER.onGround ? COYOTE : Math.max(0, STATE.coyote-1);
+      if (PLAYER.inv>0) PLAYER.inv--;
+
+      // level stuff
+      updateEnemies();
+      updateCollectibles();
+      checkCheckpointsAndGoal();
+      checkHazards();
+
+      // timer
+      if (!STATE.won && !STATE.dead){
+        STATE.levelTime -= 1/60;
+        if (STATE.levelTime <= 0) hurtPlayer(); // time out hurts
+      }
+
+      // camera
+      const center = WIDTH*0.45;
+      if (PLAYER.x - STATE.cameraX > center) STATE.cameraX = PLAYER.x - center;
+      if (STATE.cameraX < 0) STATE.cameraX=0;
+    }
+
+    draw();
+    requestAnimationFrame(step);
+  }
+
+  // boot
+  loadLevel(progress.levelUnlocked||0);
+  requestAnimationFrame(step);
+})();
+</script>
+</body>
+</html>
